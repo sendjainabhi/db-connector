@@ -1,0 +1,7 @@
+accelerator:
+  displayName: IPZS DB Connector Accelerator
+  description: IPZS DB Connector Accelerator
+  iconUrl: https://images.freecreatives.com/wp-content/uploads/2015/05/smiley-559124_640.jpg
+  tags:
+    - db-connector
+    - getting-started
