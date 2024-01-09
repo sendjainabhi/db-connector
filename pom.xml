@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>it.ipzs.archetypes</groupId>
+	<artifactId>db-connector-archetype</artifactId>
+	<version>0.1.2-SNAPSHOT</version>
+	<packaging>maven-archetype</packaging>
+
+	<name>DB Connector</name>
+	<description>An archetype for microservices that need to expose a REST API and connect to an Oracle database</description>
+
+	<distributionManagement>
+		<repository>
+			<id>nexus</id>
+			<url>http://srv-dap-jfrog.ipzs.it:9000/nexus/content/repositories/snapshots</url>
+		</repository>
+	</distributionManagement>
+
+	<build>
+		<extensions>
+			<extension>
+				<groupId>org.apache.maven.archetype</groupId>
+				<artifactId>archetype-packaging</artifactId>
+				<version>3.2.1</version>
+			</extension>
+		</extensions>
+
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<artifactId>maven-archetype-plugin</artifactId>
+					<version>3.2.1</version>
+					<executions>
+						<execution>
+							<goals>
+								<goal>integration-test</goal>
+							</goals>
+						</execution>
+					</executions>
+				</plugin>
+				<plugin>
+					<groupId>org.sonatype.plugins</groupId>
+					<artifactId>nexus-staging-maven-plugin</artifactId>
+					<version>1.6.8</version>
+					<extensions>true</extensions>
+					<executions>
+						<execution>
+							<id>default-deploy</id>
+							<phase>deploy</phase>
+							<goals>
+								<goal>deploy</goal>
+							</goals>
+						</execution>
+					</executions>
+					<configuration>
+						<serverId>nexus</serverId>
+						<nexusUrl>http://srv-dap-jfrog.ipzs.it:9000/nexus/</nexusUrl>
+						<autoReleaseAfterClose>true</autoReleaseAfterClose>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+	</build>
+
+</project>

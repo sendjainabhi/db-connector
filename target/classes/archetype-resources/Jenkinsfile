@@ -1,0 +1,355 @@
+@Library('jenkins_library') import ipzs.properties.projectProperties
+
+pipeline {
+	agent {
+    	kubernetes {
+      	    cloud config.cloudSelector(BRANCH_NAME)
+            defaultContainer 'jenkins-builder'
+    	}
+  	}
+    environment {
+        BUILDER = 'tiny-jammy'
+        TBS_SERVICE_ACCOUNT = 'jenkins-cicd-tools-sa'
+        PROJECT_NAME = '${projectName}'
+        APP_NAME = '${artifactId}'
+        GATEWAY = '${gateway}'
+        AUTH = '${auth}'
+    }
+    options {
+        ansiColor('xterm')
+        disableConcurrentBuilds()
+        gitLabConnection('git.ipzs.it')
+    }
+    stages {
+        stage('Properties configuration') {
+            steps {
+                script {
+                    updateGitlabCommitStatus name: 'Pipeline', state: 'running'
+                    updateGitlabCommitStatus name: 'Init', state: 'running'
+                    // Environment
+                    env.targetEnv = config.envSelector(BRANCH_NAME)
+                    objectProject = new projectProperties(APP_NAME, PROJECT_NAME)
+                    // Repositories 
+                    env.gitopsRepository = objectProject.getGitopsRepository()
+                    // Emails
+                    env.developersDL = objectProject.getDevelopersDL()
+                    env.securityDL = objectProject.getSecurityDL()
+                    env.GIT_USER_NAME = gitUtils.gitCommitUser()
+                    env.GIT_USER_EMAIL = gitUtils.gitCommitEmail()
+                }
+            }
+            post {
+                success { updateGitlabCommitStatus name: 'Init', state: 'running' }
+                failure { 
+                    updateGitlabCommitStatus name: 'Init', state: 'failed'
+                    script { currentBuild.result = 'FAILURE'}
+                }
+            }
+        }
+        stage('Release Tag retrieve') {
+            steps {
+                script {
+                    env.SHORT_GIT_COMMIT = GIT_COMMIT.substring(0, 6)
+                    env.RELEASE_VERSION = gitUtils.getGitVersion()
+                }
+            }
+            post {
+                success { updateGitlabCommitStatus name: 'Init', state: 'running' }
+                failure { 
+                    updateGitlabCommitStatus name: 'Init', state: 'failed'
+                    script { currentBuild.result = 'FAILURE'}
+                }
+            }
+        }
+        stage('Nexus Configuration') {
+            steps {
+                script {
+                    artifact.nexusConfiguration(objectProject)
+                }
+            }
+            post {
+                success { updateGitlabCommitStatus name: 'Init', state: 'success' }
+                failure { 
+                    updateGitlabCommitStatus name: 'Init', state: 'failed'
+                    script { currentBuild.result = 'FAILURE'}
+                }
+            }
+        }
+        stage('Stages for SAST, SCA, Auditing, SonarQube') {
+            when { expression { targetEnv in ['uat', 'dev', 'other'] || config.checkHotfixBranch() } }
+            stages {
+                stage('Secrets Auditing') {
+                    when { expression { targetEnv != 'other' } }
+                    steps {
+                        script {
+                            updateGitlabCommitStatus name: 'Secrets Auditing', state: 'running'
+                            try {
+                                env.secrestAuditingFailed = false
+                                sast.secretsAuditing()
+                            } catch(Exception e) {
+                                updateGitlabCommitStatus name: 'Secrets Auditing', state: 'failed'
+                                env.secrestAuditingFailed = true
+                                emailRecipients = [GIT_USER_EMAIL, developersDL]
+                                requiredInput.gitleaksInput(objectProject, 'report-gitleaks.json', emailRecipients)
+                            }
+                        }
+                    }
+                    post {
+                        success {
+                            script {
+                                if (secrestAuditingFailed) { updateGitlabCommitStatus name: 'Secrets Auditing', state: 'failed'
+                                } else { updateGitlabCommitStatus name: 'Secrets Auditing', state: 'success' }
+                            }
+                        }
+                        failure {
+                            updateGitlabCommitStatus name: 'Secrets Auditing', state: 'failed'
+                            script { currentBuild.result = 'FAILURE' }
+                        }
+                    }
+                }
+                stage('Artifact Build') {
+                    when { expression { targetEnv != 'other' } }
+                    steps {
+                        script {
+                            updateGitlabCommitStatus name: 'Artifact Build', state: 'running'
+                            artifact.build("mvn")
+                        }
+                    }
+                    post {
+                        success { updateGitlabCommitStatus name: 'Artifact Build', state: 'success' }
+                        failure {
+                            updateGitlabCommitStatus name: 'Artifact Build', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('[SAST] Static Code Analysis') {
+                    when { expression { targetEnv != 'other' } }
+                    steps {
+                        script {
+                            env.reportSast = sast.staticCodeAnalysis()
+                        }
+                    }
+                    post {
+                        success { updateGitlabCommitStatus name: 'Code Analysis', state: 'running' }
+                        failure {
+                            updateGitlabCommitStatus name: 'Code Analysis', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('[SCA] SBOM File Generation') {
+                    when { expression { targetEnv != 'other' } }
+                    steps {
+                        script {
+                            sast.sbomGeneration()
+                        }
+                    }
+                    post {
+                        success { updateGitlabCommitStatus name: 'Code Analysis', state: 'running' }
+                        failure {
+                            updateGitlabCommitStatus name: 'Code Analysis', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('[SCA] SBOM File Analysis') {
+                    when { expression { targetEnv != 'other' } }
+                    steps {
+                        script {
+                            sast.sbomAnalysis()
+                        }
+                    }
+                    post {
+                        success { updateGitlabCommitStatus name: 'Code Analysis', state: 'success' }
+                        failure {
+                            updateGitlabCommitStatus name: 'Code Analysis', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('[SAST][SCA] Analysis reports sending') {
+                    when { expression { targetEnv != 'other' } }
+                    steps {
+                        script {
+                            updateGitlabCommitStatus name: 'SAST report', state: 'running'
+                            // Recipients and files to be sent
+                            recipients = [developersDL]
+                            fileList = [reportSast, 'sbom.json', 'report-sbom.json']
+                            email.sastResult(recipients, fileList)
+                            // Upload to Nexus
+                            artifact.reportsUpload(fileList, objectProject, targetEnv)
+                        }
+                    }
+                    post {
+                        success { updateGitlabCommitStatus name: 'SAST report', state: 'success' }
+                        failure {
+                            updateGitlabCommitStatus name: 'SAST report', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('Artifact Tests') {
+                    steps {
+                        script {
+                            updateGitlabCommitStatus name: 'Artifact Tests', state: 'running'
+                            artifact.tests("mvn")
+                            junit 'target/surefire-reports/TEST-*.xml'
+                        }
+                    }
+                    post {
+                        success { updateGitlabCommitStatus name: 'Artifact Tests', state: 'success' }
+                        failure {
+                            updateGitlabCommitStatus name: 'Artifact Tests', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('SonarQube Analysis') {
+                    when { expression { targetEnv != 'other' } }
+                    steps {
+                        updateGitlabCommitStatus name: 'SonarQube Code Analysis', state: 'running'
+                        withSonarQubeEnv(credentialsId: 'sonarqube-global-token', installationName: 'IPZS-SonarQube-Server') {
+                            sh 'mvn clean verify sonar:sonar -Pcoverage -Dsonar.projectKey=$APP_NAME'
+                        }
+                    }
+                    post {
+                        success {
+                            updateGitlabCommitStatus name: 'SonarQube Code Analysis', state: 'success'
+                            println("Check the overall situation for this service here: https://sonarqube.ipzs.it/dashboard?id=${APP_NAME}")
+                        }
+                        failure {
+                            updateGitlabCommitStatus name: 'SonarQube Code Analysis', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('SonarQube Quality Gate') {
+                    when { expression { targetEnv == 'uat' }}
+                    steps {
+                        updateGitlabCommitStatus name: 'SonarQube Quality Gate', state: 'running'
+                        withSonarQubeEnv(credentialsId: 'sonarqube-global-token', installationName: 'IPZS-SonarQube-Server') {
+                            script{
+                                sh 'sleep 30' // Necessary for a known bug with the SonarQube plugin
+                                def qualitygate = waitForQualityGate()
+                                env.qualityGateStatus = qualitygate.status
+                                if (qualityGateStatus != "OK") {
+                                    println("Pipeline aborted due to quality gate coverage failure with status: ${qualityGateStatus}")
+                                    updateGitlabCommitStatus name: 'SonarQube Quality Gate', state: 'failed'
+                                    timeout(time:7, unit: 'DAYS'){
+                                        unstable(message: "Stage '${STAGE_NAME}' is unstable")
+                                        requiredInput.qualityGateInput(objectProject)
+                                    }
+                                } else { updateGitlabCommitStatus name: 'SonarQube Quality Gate', state: 'success' }
+                            }
+                        }
+                    }
+                    post {
+                        failure {
+                            updateGitlabCommitStatus name: 'SonarQube Quality Gate', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+                stage('Artifact Push to Nexus') {
+                    when { expression { targetEnv == 'uat' }}
+                    steps {
+                        script {
+                            updateGitlabCommitStatus name: 'Artifact Push', state: 'running'
+                            artifactPath = artifact.setTag(objectProject, targetEnv)
+                            artifact.nexusPush(artifactPath)
+                        }
+                    }
+                    post {
+                        success { updateGitlabCommitStatus name: 'Artifact Push', state: 'success' }
+                        failure {
+                            updateGitlabCommitStatus name: 'Artifact Push', state: 'failed'
+                            script { currentBuild.result = 'FAILURE'}
+                        }
+                    }
+                }
+            }
+        }
+        stage('Build/Promote image and push to Harbor') {
+            when { expression { targetEnv in ['prod', 'pre-prod', 'dev', 'uat'] || config.checkHotfixBranch() }}
+            steps {
+                script {
+                    updateGitlabCommitStatus name: 'Image Build and Push', state: 'running'
+                    // TBS Build environment arguments
+                    envArgs = '--env "BP_JVM_VERSION=17" --env BP_MAVEN_BUILD_ARGUMENTS="-X -Dmaven.test.skip=true package" --env BP_LOG_LEVEL="DEBUG"  '
+                    // Function that build, promote and push depending on the selected enviroment
+                    harbor.kpackOrchestrator(targetEnv, objectProject, RELEASE_VERSION, SHORT_GIT_COMMIT, TBS_SERVICE_ACCOUNT, envArgs);
+                }
+            }
+            post {
+                success { updateGitlabCommitStatus name: 'Image Build and Push', state: 'success' }
+                always { 
+                    updateGitlabCommitStatus name: 'Image Build and Push', state: 'failed'
+                    script {
+                        harborTag = harbor.setHarborTag(targetEnv, RELEASE_VERSION, SHORT_GIT_COMMIT)
+                        def tbsClusterInfo = tanzu.getTBSInfo(targetEnv)
+                        harbor.kpackDeleteImage(tbsClusterInfo, harborTag)
+                    }
+                }
+            }
+        }
+        stage('Generate Descriptor') {
+            when { expression { targetEnv in ['prod', 'pre-prod', 'uat', 'dev'] } }
+            steps {
+                script {
+                    updateGitlabCommitStatus name: 'Push GitOps', state: 'running'
+                    descriptor.generateDescriptor(targetEnv, APP_NAME, image_sp, gitopsRepository)
+                }
+            }
+            post {
+                success { updateGitlabCommitStatus name: 'Push GitOps', state: 'success' }
+                failure {
+                    updateGitlabCommitStatus name: 'Push GitOps', state: 'failed'
+                    script { currentBuild.result = 'FAILURE'}
+                }
+            }
+        }
+        stage('Publish on Gateway') {
+            when { expression { targetEnv in ['dev'] } } // 'prod', 'uat', 'pre-prod' not present until resources availability
+            steps {
+                script {
+                    updateGitlabCommitStatus name: 'Publish on Gateway', state: 'running'
+                    gateway.publishApi(targetEnv, APP_NAME, PROJECT_NAME, GATEWAY, AUTH)
+                }
+            }
+            post {
+                success { updateGitlabCommitStatus name: 'Publish on Gateway', state: 'success' }
+                failure {
+                    updateGitlabCommitStatus name: 'Publish on Gateway', state: 'failed'
+                    script { currentBuild.result = 'FAILURE'}
+                }
+            }
+        }
+    }
+    post {
+        always {
+            script {
+                currentBuild.displayName = "#${BUILD_NUMBER}, RELEASE: ${RELEASE_VERSION}, BRANCH: ${BRANCH_NAME}"
+            }
+        }
+        success {
+            updateGitlabCommitStatus name: 'Pipeline', state: 'success' 
+        }
+        unstable {
+            script {
+                if (qualityGateStatus != "OK") { updateGitlabCommitStatus name: 'Pipeline', state: 'success' }
+                else { updateGitlabCommitStatus name: 'Pipeline', state: 'canceled' }
+            }
+        }
+        aborted {
+            updateGitlabCommitStatus name: 'Pipeline', state: 'failed' 
+        }
+        failure {
+            updateGitlabCommitStatus name: 'Pipeline', state: 'failed'
+            script {
+                recipientsEmail = [GIT_USER_EMAIL, developersDL]
+                email.pipelineFailed(recipientsEmail)
+            }
+        }
+    }
+}

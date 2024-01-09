@@ -1,0 +1,120 @@
+openapi: 3.0.1
+info:
+  title: hello-world
+  description: hello-world
+  version: 1.0.0
+servers:
+  - url: http://localhost:9090
+    description: Generated server url
+paths:
+  /products/{productId}:
+    get:
+      tags:
+        - product-controller
+      operationId: getProductById
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/GetProductDto'
+    put:
+      tags:
+        - product-controller
+      operationId: updateProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateProductDto'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+    delete:
+      tags:
+        - product-controller
+      operationId: deleteProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+  /products:
+    get:
+      tags:
+        - product-controller
+      operationId: getProducts
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+    post:
+      tags:
+        - product-controller
+      operationId: addProduct
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateProductDto'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+components:
+  schemas:
+    CreateOrUpdateProductDto:
+      type: object
+      properties:
+        name:
+          type: string
+    GetProductDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+x-wso2-production-endpoints:
+  urls:
+    - https://msname.namespace.svc.cluster.local:8443
+x-wso2-sandbox-endpoints:
+  urls:
+    - https://msname.namespace.svc.cluster.local:8443

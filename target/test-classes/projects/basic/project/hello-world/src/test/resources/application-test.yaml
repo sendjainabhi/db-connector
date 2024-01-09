@@ -1,0 +1,17 @@
+# Spring configurations
+spring:
+  datasource:
+    url: jdbc:h2:mem:javadevjournal
+    username: sa
+    password: pass
+    driver-class-name: org.h2.Driver
+  jpa:
+    properties:
+      hibernate:
+       show_sql: false
+       format_sql: true
+       default_schema: 
+    database-platform: org.hibernate.dialect.H2Dialect
+    defer-datasource-initialization: true
+      
+      

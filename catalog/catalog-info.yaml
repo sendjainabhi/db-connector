@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: db-connector
+  description: ipzs db connector app template
+  tags:
+    - app-accelerator
+    - java
+    - spring
+    - web
+  annotations:
+    "backstage.io/kubernetes-label-selector": "app.kubernetes.io/part-of=db-connector"
+spec:
+  type: service
+  lifecycle: ipzs
+  owner: ipzs-team

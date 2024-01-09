@@ -1,0 +1,73 @@
+#set( $symbol_pound = '#' )
+#set( $symbol_dollar = '$' )
+#set( $symbol_escape = '\' )
+
+# Open API configurations
+api:
+  title: '@project.name@'
+  description: '@project.description@'
+  ver: '@project.version@'
+swagger:
+  project-title: '@project.name@'
+  project-version: '@project.version@'
+  project-description: '@project.description@'
+  extensions:
+    x-wso2-production-endpoints: 
+      urls:
+        - https://msname.namespace.svc.cluster.local:8443
+    x-wso2-sandbox-endpoints:
+      urls:
+        - https://msname.namespace.svc.cluster.local:8443
+
+# Server configurations
+server:
+  port: 8443
+  ssl:
+    certificate: classpath:cert/tls.crt
+    certificate-private-key: classpath:cert/tls.key
+
+# Spring DOC configurations
+springdoc:
+  swagger-ui:
+   enabled: true
+
+# Spring configurations
+spring:
+  datasource:
+    url: ${symbol_dollar}{SPRING_DATASOURCE_URL:}                
+    username: ${symbol_dollar}{SPRING_DATASOURCE_USERNAME:}      
+    password: ${symbol_dollar}{SPRING_DATASOURCE_PASSWORD:}        
+    driver-class-name: oracle.jdbc.OracleDriver
+  jpa:
+    properties:
+      hibernate:
+        show_sql: false
+        format_sql: true
+        default_schema: TRUSTITALY
+    database: oracle
+    database-platform: org.hibernate.dialect.OracleDialect 
+
+# Actuator
+management:
+  server:
+      port: 8080
+      ssl:
+        enabled: false
+  endpoint:
+    env: 
+     show-values: ALWAYS
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+    prometheus:
+      enabled: true
