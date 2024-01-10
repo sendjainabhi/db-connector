@@ -1,0 +1,18 @@
+apiVersion: accelerator.apps.tanzu.vmware.com/v1alpha1
+kind: Accelerator
+metadata:
+  name: sample-db-connector
+  namespace: accelerator-system
+spec:
+  displayName:  DB Connector Accelerator with private git repo
+  description:  DB Connector Accelerator with private git repo
+  iconUrl: https://images.freecreatives.com/wp-content/uploads/2015/05/smiley-559124_640.jpg
+  tags:
+    - db-connector
+    - getting-started
+  git:
+    url: https://github.com/sendjainabhi/db-connector
+    ref:
+      branch: main
+    secretRef:
+      name: git-abhi-credentials
