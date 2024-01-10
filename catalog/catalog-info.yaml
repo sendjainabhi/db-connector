@@ -9,7 +9,7 @@ metadata:
     - spring
     - web
   annotations:
-    "backstage.io/kubernetes-label-selector": "app.kubernetes.io/part-of=db-connector"
+    "backstage.io/kubernetes-label-selector": "app.kubernetes.io/part-of=sample-db-connector"
 spec:
   type: service
   lifecycle: ipzs
