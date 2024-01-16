@@ -34,8 +34,6 @@ accelerator:
       choices:
         - value: maven
           text: Maven (https://maven.apache.org/)
-        - value: gradle
-          text: Gradle (https://gradle.org/)
     - name: exposeOpenAPIEndpoint
       label: Expose OpenAPI endpoint?
       dataType: boolean
