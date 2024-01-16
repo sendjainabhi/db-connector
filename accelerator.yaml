@@ -1,12 +1,4 @@
 accelerator:
-  managed_resources:
-    enable: true
-  git:
-    url: https://github.com/sendjainabhi/tap-accelerrator-db-connector
-    ref:
-      branch: main
-    secretRef:
-      name: git-abhi-credentials
   displayName: sample-db-connector
   description: sample-db-connector
   iconUrl: https://images.freecreatives.com/wp-content/uploads/2015/05/smiley-559124_640.jpg
@@ -42,6 +34,8 @@ accelerator:
       choices:
         - value: maven
           text: Maven (https://maven.apache.org/)
+        - value: gradle
+          text: Gradle (https://gradle.org/)
     - name: exposeOpenAPIEndpoint
       label: Expose OpenAPI endpoint?
       dataType: boolean
@@ -67,6 +61,43 @@ accelerator:
       defaultValue: "Manage customer profiles"
       dependsOn:
         name: exposeOpenAPIEndpoint
+    - name: databaseType
+      inputType: select
+      label: Database type to use
+      choices:
+        - value: "postgres"
+          text: PostgreSQL
+        - value: "mysql"
+          text: MySQL
+      defaultValue: "postgres"
+      required: true
+  imports:
+    - name: spring-boot-postgresql
+      expose:
+        - name: databaseName
+          dependsOn:
+            name: databaseType
+            value: postgres
+    - name: spring-boot-mysql
+      expose:
+        - name: databaseName
+          dependsOn:
+            name: databaseType
+            value: mysql
+    - name: spring-boot-database
+      expose:
+        - name: databaseMigrationTool
+        - name: databaseIntegrationTestType
+    - name: live-update
+      expose:
+        - name: liveUpdateIDESupport
+          dependsOn:
+            name: buildTool
+            value: "maven"
+    - name: tap-workload
+    - name: build-wrapper-maven
+    - name: build-wrapper-gradle
+
 engine:
   let:
     - name: packageDirectory
@@ -149,6 +180,20 @@ engine:
             - type: RewritePath
               rewriteTo: "'config/workload.yaml'"
     # End OpenAPI Endpoint Auto-registration
+
+    # Workload Resource name and database resource name
+    - merge:
+        - exclude: ["config/**"]
+        - include: ["config/workload.yaml"]
+          chain:
+            - type: ReplaceText
+              substitutions:
+                - text: "rest-service-db"
+                  with: "#workloadResourceName"
+                - text: "customer-database"
+                  with: "#databaseResourceName"
+    # End Workload Resource name
+
     - merge:
         - type: InvokeFragment
           reference: spring-boot-database
@@ -196,6 +241,7 @@ engine:
             - type: RewritePath
               regex: "src/(?<sourceset>.*)/java/(?<currentpackage>.*/)restservicedb(?<untouchedpath>.*)"
               rewriteTo: "'src/' + #sourceset + '/java/' + #packageDirectory + '/' + #untouchedpath"
+
     - merge:
         - include: ["**/*.jar"]
         - exclude: ["**/*.jar"]
@@ -204,4 +250,60 @@ engine:
               substitutions:
                 - text: "rest-service-db"
                   with: "#artifactId"
+
+    - merge:
+        - include: ["**"]
+        - type: InvokeFragment
+          condition: "#buildTool == 'maven'"
+          reference: build-wrapper-maven
+        - type: InvokeFragment
+          condition: "#buildTool == 'gradle'"
+          reference: build-wrapper-gradle
+
+    # DATABASE.md
+    - merge:
+        - exclude: ["DATABASE.md"]
+        - condition: "#databaseType == 'mysql'"
+          include: ["DATABASE.md"]
+          chain:
+            - type: ReplaceText
+              regex:
+                pattern: "Postgres"
+                with: "'MySQL'"
+            - type: ReplaceText
+              regex:
+                pattern: "PostgreSQL"
+                with: "'MySQL'"
+            - type: ReplaceText
+              regex:
+                pattern: "postgresql"
+                with: "'mysql'"
+            - type: ReplaceText
+              regex:
+                pattern: "postgres"
+                with: "'mysql'"
+            - type: ReplaceText
+              substitutions:
+                - text: "customer-database"
+                  with: "#databaseResourceName"
+            - type: ReplaceText
+              regex:
+                pattern: "\\[local\\]"
+                with: |
+                  'For local development a `docker compose` database instance will be started using `spring-boot-docker-compose`. 
+                  '
+        - condition: "#databaseType == 'postgres'"
+          include: ["DATABASE.md"]
+          chain:
+            - type: ReplaceText
+              substitutions:
+                - text: "customer-database"
+                  with: "#databaseResourceName"
+            - type: ReplaceText
+              regex:
+                pattern: "\\[local\\]"
+                with: |
+                  'For local development a `docker compose` database instance will be started using `spring-boot-docker-compose`. 
+                  '
+    # end of DATABASE.md
     - type: Provenance
