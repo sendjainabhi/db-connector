@@ -61,33 +61,8 @@ accelerator:
       defaultValue: "Manage customer profiles"
       dependsOn:
         name: exposeOpenAPIEndpoint
-    - name: databaseType
-      inputType: select
-      label: Database type to use
-      choices:
-        - value: "postgres"
-          text: PostgreSQL
-        - value: "mysql"
-          text: MySQL
-      defaultValue: "postgres"
-      required: true
+
   imports:
-    - name: spring-boot-postgresql
-      expose:
-        - name: databaseName
-          dependsOn:
-            name: databaseType
-            value: postgres
-    - name: spring-boot-mysql
-      expose:
-        - name: databaseName
-          dependsOn:
-            name: databaseType
-            value: mysql
-    - name: spring-boot-database
-      expose:
-        - name: databaseMigrationTool
-        - name: databaseIntegrationTestType
     - name: live-update
       expose:
         - name: liveUpdateIDESupport
@@ -96,7 +71,6 @@ accelerator:
             value: "maven"
     - name: tap-workload
     - name: build-wrapper-maven
-    - name: build-wrapper-gradle
 
 engine:
   let:
@@ -104,8 +78,7 @@ engine:
       expression: '#packageName.replace(".", "/")'
     - name: workloadResourceName
       expression: "#artifactId.toLowerCase()"
-    - name: databaseResourceName
-      expression: "#databaseName.toLowerCase()"
+
   chain:
     # Maven is selected
     - condition: "#buildTool == 'maven'"
@@ -130,30 +103,6 @@ engine:
                 pattern: "--- StartMaven\\s|--- EndMaven\\s"
                 with: "''"
     # end of the Maven specific part
-
-    # Gradle is selected
-    - condition: "#buildTool == 'gradle'"
-      exclude: ["pom.xml"]
-      merge:
-        - include: ["**"]
-          exclude: ["build.gradle.kts", "README.md"]
-        - include: ["build.gradle.kts"]
-          chain:
-            - type: ReplaceText
-              substitutions:
-                - text: 'group = "com.vmware.tap.accelerators"'
-                  with: '''group = "'' + #groupId + ''"'''
-        - include: ["README.md"]
-          chain:
-            - type: ReplaceText
-              regex:
-                pattern: "--- StartMaven[\\s\\S]+?--- EndMaven"
-                with: "''"
-            - type: ReplaceText
-              regex:
-                pattern: "--- StartGradle\\s|--- EndGradle\\s"
-                with: "''"
-    # end of the Gradle specific part
 
     # OpenAPI Endpoint Auto-registration
     - merge:
@@ -188,31 +137,10 @@ engine:
           chain:
             - type: ReplaceText
               substitutions:
-                - text: "rest-service-db"
+                - text: "sample-db-connector"
                   with: "#workloadResourceName"
-                - text: "customer-database"
-                  with: "#databaseResourceName"
+
     # End Workload Resource name
-
-    - merge:
-        - type: InvokeFragment
-          reference: spring-boot-database
-        - include: ["**"]
-      onConflict: UseFirst
-
-    - condition: "#databaseType == 'postgres'"
-      merge:
-        - type: InvokeFragment
-          reference: spring-boot-postgresql
-        - include: ["**"]
-      onConflict: UseFirst
-
-    - condition: "#databaseType == 'mysql'"
-      merge:
-        - type: InvokeFragment
-          reference: spring-boot-mysql
-        - include: ["**"]
-      onConflict: UseFirst
 
     - condition: "#buildTool == 'maven'"
       merge:
@@ -260,50 +188,4 @@ engine:
           condition: "#buildTool == 'gradle'"
           reference: build-wrapper-gradle
 
-    # DATABASE.md
-    - merge:
-        - exclude: ["DATABASE.md"]
-        - condition: "#databaseType == 'mysql'"
-          include: ["DATABASE.md"]
-          chain:
-            - type: ReplaceText
-              regex:
-                pattern: "Postgres"
-                with: "'MySQL'"
-            - type: ReplaceText
-              regex:
-                pattern: "PostgreSQL"
-                with: "'MySQL'"
-            - type: ReplaceText
-              regex:
-                pattern: "postgresql"
-                with: "'mysql'"
-            - type: ReplaceText
-              regex:
-                pattern: "postgres"
-                with: "'mysql'"
-            - type: ReplaceText
-              substitutions:
-                - text: "customer-database"
-                  with: "#databaseResourceName"
-            - type: ReplaceText
-              regex:
-                pattern: "\\[local\\]"
-                with: |
-                  'For local development a `docker compose` database instance will be started using `spring-boot-docker-compose`. 
-                  '
-        - condition: "#databaseType == 'postgres'"
-          include: ["DATABASE.md"]
-          chain:
-            - type: ReplaceText
-              substitutions:
-                - text: "customer-database"
-                  with: "#databaseResourceName"
-            - type: ReplaceText
-              regex:
-                pattern: "\\[local\\]"
-                with: |
-                  'For local development a `docker compose` database instance will be started using `spring-boot-docker-compose`. 
-                  '
-    # end of DATABASE.md
     - type: Provenance
