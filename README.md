@@ -20,6 +20,7 @@ tanzu apps workload create db-connector \
 --git-branch main \
 --type web \
 --label app.kubernetes.io/part-of=db-connector \
+--param gitops_ssh_secret=git-abhi-credentials \
 --yes
 
 ```

@@ -3,6 +3,35 @@ kind: Accelerator
 metadata:
   name: sample-db-connector
   namespace: accelerator-system
+  data:
+    - name: groupId
+      inputType: text
+      defaultValue: "com.ipzs"
+      label: Module group name
+      required: true
+    - name: packageName
+      inputType: text
+      defaultValue: "com.ipzs.dbconnector"
+      label: Module root package
+      required: false
+    - name: buildTool
+      label: Build Tool
+      inputType: select
+      required: true
+      defaultValue: maven
+      choices:
+        - value: maven
+          text: Maven (https://maven.apache.org/)
+        - value: gradle
+          text: Gradle (https://gradle.org/)
+    - name: live-update
+      expose:
+        - name: liveUpdateIDESupport
+          dependsOn:
+            name: buildTool
+            value: "maven"
+    - name: tap-workload
+    - name: build-wrapper-maven
 spec:
   displayName: DB Connector Accelerator with private git repo
   description: DB Connector Accelerator with private git repo
@@ -10,6 +39,10 @@ spec:
   tags:
     - db-connector
     - getting-started
+    - java
+    - spring
+    - web
+    - tanzu
   git:
     url: https://github.com/sendjainabhi/tap-accelerrator-db-connector
     ref:
