@@ -1,0 +1,207 @@
+accelerator:
+  managed_resources:
+    enable: true
+  git:
+    url: https://github.com/sendjainabhi/tap-accelerrator-db-connector
+    ref:
+      branch: main
+    secretRef:
+      name: git-abhi-credentials
+  displayName: sample-db-connector
+  description: sample-db-connector
+  iconUrl: https://images.freecreatives.com/wp-content/uploads/2015/05/smiley-559124_640.jpg
+  tags:
+    - java
+    - spring
+    - web
+    - jpa
+    - postgresql
+    - tanzu
+
+  options:
+    - name: artifactId
+      inputType: text
+      defaultValue: "customer-profile"
+      label: Module artifact name
+      required: true
+    - name: groupId
+      inputType: text
+      defaultValue: "com.example"
+      label: Module group name
+      required: true
+    - name: packageName
+      inputType: text
+      defaultValue: "com.example.customerprofile"
+      label: Module root package
+      required: true
+    - name: buildTool
+      label: Build Tool
+      inputType: select
+      required: true
+      defaultValue: maven
+      choices:
+        - value: maven
+          text: Maven (https://maven.apache.org/)
+    - name: exposeOpenAPIEndpoint
+      label: Expose OpenAPI endpoint?
+      dataType: boolean
+      defaultValue: false
+    - name: apiSystem
+      label: System API Belongs To
+      inputType: text
+      required: true
+      defaultValue: "profile-management"
+      dependsOn:
+        name: exposeOpenAPIEndpoint
+    - name: apiOwner
+      label: Owner of API
+      inputType: text
+      required: true
+      defaultValue: "customer-relations-department"
+      dependsOn:
+        name: exposeOpenAPIEndpoint
+    - name: apiDescription
+      label: API Description
+      inputType: text
+      required: true
+      defaultValue: "Manage customer profiles"
+      dependsOn:
+        name: exposeOpenAPIEndpoint
+engine:
+  let:
+    - name: packageDirectory
+      expression: '#packageName.replace(".", "/")'
+    - name: workloadResourceName
+      expression: "#artifactId.toLowerCase()"
+    - name: databaseResourceName
+      expression: "#databaseName.toLowerCase()"
+  chain:
+    # Maven is selected
+    - condition: "#buildTool == 'maven'"
+      exclude: ["settings.gradle.kts", "build.gradle.kts"]
+      merge:
+        - include: ["**"]
+          exclude: ["pom.xml", "README.md"]
+        - include: ["pom.xml"]
+          chain:
+            - type: ReplaceText
+              substitutions:
+                - text: "<groupId>com.vmware.tap.accelerators</groupId>"
+                  with: "'<groupId>' + #groupId + '</groupId>'"
+        - include: ["README.md"]
+          chain:
+            - type: ReplaceText
+              regex:
+                pattern: "--- StartGradle[\\s\\S]+?--- EndGradle"
+                with: "''"
+            - type: ReplaceText
+              regex:
+                pattern: "--- StartMaven\\s|--- EndMaven\\s"
+                with: "''"
+    # end of the Maven specific part
+
+    # Gradle is selected
+    - condition: "#buildTool == 'gradle'"
+      exclude: ["pom.xml"]
+      merge:
+        - include: ["**"]
+          exclude: ["build.gradle.kts", "README.md"]
+        - include: ["build.gradle.kts"]
+          chain:
+            - type: ReplaceText
+              substitutions:
+                - text: 'group = "com.vmware.tap.accelerators"'
+                  with: '''group = "'' + #groupId + ''"'''
+        - include: ["README.md"]
+          chain:
+            - type: ReplaceText
+              regex:
+                pattern: "--- StartMaven[\\s\\S]+?--- EndMaven"
+                with: "''"
+            - type: ReplaceText
+              regex:
+                pattern: "--- StartGradle\\s|--- EndGradle\\s"
+                with: "''"
+    # end of the Gradle specific part
+
+    # OpenAPI Endpoint Auto-registration
+    - merge:
+        - include: ["**"]
+          exclude:
+            ["config/workload-basic.yaml", "config/workload-api-provider.yaml"]
+        - include: ["config/workload-api-provider.yaml"]
+          condition: "#exposeOpenAPIEndpoint"
+          chain:
+            - type: ReplaceText
+              condition: "#exposeOpenAPIEndpoint"
+              substitutions:
+                - text: "SYSTEM_VAL"
+                  with: "#apiSystem"
+                - text: "OWNER_VAL"
+                  with: "#apiOwner"
+                - text: "DESCRIPTION_VAL"
+                  with: "#apiDescription"
+            - type: RewritePath
+              rewriteTo: "'config/workload.yaml'"
+        - include: ["config/workload-basic.yaml"]
+          condition: "!#exposeOpenAPIEndpoint"
+          chain:
+            - type: RewritePath
+              rewriteTo: "'config/workload.yaml'"
+    # End OpenAPI Endpoint Auto-registration
+    - merge:
+        - type: InvokeFragment
+          reference: spring-boot-database
+        - include: ["**"]
+      onConflict: UseFirst
+
+    - condition: "#databaseType == 'postgres'"
+      merge:
+        - type: InvokeFragment
+          reference: spring-boot-postgresql
+        - include: ["**"]
+      onConflict: UseFirst
+
+    - condition: "#databaseType == 'mysql'"
+      merge:
+        - type: InvokeFragment
+          reference: spring-boot-mysql
+        - include: ["**"]
+      onConflict: UseFirst
+
+    - condition: "#buildTool == 'maven'"
+      merge:
+        - type: InvokeFragment
+          reference: live-update
+        - include: ["**"]
+      onConflict: UseFirst
+
+    - merge:
+        - type: InvokeFragment
+          reference: tap-workload
+        - include: ["**"]
+      onConflict: UseFirst
+
+    - merge:
+        - exclude: ["**/*.java"]
+        - include: ["**/*.java"]
+          let:
+            - name: packageDirectory
+              expression: '#packageName.replace(".", "/")'
+          chain:
+            - type: ReplaceText
+              substitutions:
+                - text: "com.vmware.tap.accelerators.restservicedb"
+                  with: "#packageName"
+            - type: RewritePath
+              regex: "src/(?<sourceset>.*)/java/(?<currentpackage>.*/)restservicedb(?<untouchedpath>.*)"
+              rewriteTo: "'src/' + #sourceset + '/java/' + #packageDirectory + '/' + #untouchedpath"
+    - merge:
+        - include: ["**/*.jar"]
+        - exclude: ["**/*.jar"]
+          chain:
+            - type: ReplaceText
+              substitutions:
+                - text: "rest-service-db"
+                  with: "#artifactId"
+    - type: Provenance
